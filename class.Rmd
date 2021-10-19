@@ -1,0 +1,152 @@
+---
+title: "LAB4"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r}
+library(tidyverse)
+library(censusapi)
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+
+acs_vars_2019_5yr <-
+  listCensusMetadata(
+    name = "2019/acs/acs5",
+    type = "variables"
+  )
+
+saveRDS(acs_vars_2019_5yr, file="acs_vars_2019_5yr.rds")
+```
+
+```{r}
+acs_vars_2019_5yr <- read_rds("acs_vars_2019_5yr.rds")
+
+bay_income_white_2019 <- getCensus(
+  name = "acs/acs5",
+  vintage = "2019",
+  region = "county:001,013,041,055,075,081,085,095,097",
+  regionin = "state:06",
+  vars = "group(B19001A)"
+  )%>%
+  
+  select(ends_with("E") & -c(state, NAME)
+  )%>%
+  
+  summarize_all(sum) %>%
+  
+  pivot_longer(
+    everything(), # swinging all columns (could also be -county, see previous codes)
+    names_to = "name",
+    values_to = "estimate" #generic, could also be like household count
+  )%>%
+  
+  left_join(
+    acs_vars_2019_5yr %>%
+      select(name,label),
+  ) %>%
+  
+  separate(
+    label,
+    into = c(NA, NA, "income"),
+    sep = "!!"
+  )%>%
+  
+  select(-name) %>%
+  
+  filter(!is.na(income)) %>%
+  
+  mutate(
+    race = "White alone"
+  )
+# #LETTERS is cool, also use variable temp
+# 
+# income_by_race <- null
+# 
+# for (x in 1:7) {
+# 
+# income_by_race <- rbind(income_by_race, temp)
+# 
+# }
+```
+
+
+
+``` {r}
+
+acs_vars_2019_5yr <- read_rds("acs_vars_2019_5yr.rds")
+
+race_categories <- c(
+  "White alone",
+  "Black or African American alone",
+  "American Indian and Alaska Native alone",
+  "Asian alone",
+  "Native Hawaiian and Other Pacific Islander alone",
+  "Some Other Race alone",
+  "Two or more Races"
+)
+
+bay_income_race_2019 <-
+  1:7 %>%
+  map_dfr(function(x){
+    
+    # could include saving var as temp but sine we only have this object we dont need to
+    getCensus(
+    name = "acs/acs5",
+    vintage = "2019",
+    region = "county:001,013,041,055,075,081,085,095,097",
+    regionin = "state:06",
+    vars = paste0("group(B19001", LETTERS[x], ")")
+    )%>%
+    
+    select(ends_with("E") & -c(state, NAME)
+    )%>%
+    
+    summarize_all(sum) %>%
+    
+    pivot_longer(
+      everything(), # swinging all columns (could also be -county, see previous codes)
+      names_to = "name",
+      values_to = "estimate" #generic, could also be like household count
+    )%>%
+    
+    left_join(
+      acs_vars_2019_5yr %>%
+        select(name,label),
+    ) %>%
+    
+    separate(
+      label,
+      into = c(NA, NA, "income"),
+      sep = "!!"
+    )%>%
+    
+    select(-name) %>%
+    
+    filter(!is.na(income)) %>%
+    
+    mutate(
+      race = race_categories[x]
+    )
+      
+  })
+
+
+
+
+
+```
+
+
+```{r}
+
+```
+
+
+
+

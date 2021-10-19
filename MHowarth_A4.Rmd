@@ -1,0 +1,237 @@
+---
+title: "R Assignment 4"
+author: "Merrick Howarth"
+date: "Oct. 19, 2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+
+```{r library, include=FALSE}
+library(tidyverse)
+library(censusapi)
+library(dplyr)
+
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+
+acs_vars_2019_5yr <-
+  listCensusMetadata(
+    name = "2019/acs/acs5",
+    type = "variables"
+  )
+
+saveRDS(acs_vars_2019_5yr, file="acs_vars_2019_5yr.rds")
+```
+
+
+
+``` {r EduDataRetrv, include=FALSE}
+
+acs_vars_2019_5yr <- read_rds("acs_vars_2019_5yr.rds")
+
+race_categories <- c(
+  "White alone",
+  "Black or African American alone",
+  "American Indian and Alaska Native alone",
+  "Asian alone",
+  "Native Hawaiian and Other Pacific Islander alone",
+  "Some Other Race alone",
+  "Two or more Races"
+)
+
+edu_order <- c(
+  "Less than high school diploma", 
+  "High school graduate (includes equivalency)", 
+  "Some college or associate's degree", 
+  "Bachelor's degree or higher"
+  )
+
+sj_edu_race_2019 <-
+  1:7 %>%
+  map_dfr(function(x){
+    
+    getCensus(
+    name = "acs/acs5",
+    vintage = "2019",
+    region = "county:085",
+    regionin = "state:06",
+    vars = paste0("group(C15002", LETTERS[x], ")")
+    )%>%
+    
+    select(ends_with("E") & -c(state, NAME)
+    )%>%
+    
+    summarize_all(sum) %>%
+    
+    pivot_longer(
+      everything(), 
+      names_to = "name",
+      values_to = "estimate"
+    )%>%
+    
+    left_join(
+      acs_vars_2019_5yr %>%
+        select(name,label),
+    )%>%
+    
+    separate(
+      label,
+      into = c(NA, NA, NA, "edu_lvl"),
+      sep = "!!"
+    )%>%
+    
+    group_by(edu_lvl) %>%
+    
+    summarise(
+       estimated_pop = sum(estimate, na.rm = TRUE)
+    )%>% 
+    
+    filter(!is.na(edu_lvl)) %>%
+    
+    mutate(
+      race = race_categories[x]
+    )%>%
+      
+    slice(match(edu_order,edu_lvl))
+      
+  })
+
+
+```
+
+
+```{r plot_stacked, include=FALSE}
+
+# tried to add color pallet to remove flipping legend issue, could not resolve
+# clr_pal <- colorNumeric(
+#   palette = "Purples",
+#   levels = race_categories # or domain = NULL
+# )
+
+edu_labs <- c(
+  "Less than high \n school diploma", 
+  "High school graduate \n (includes equivalency)", 
+  "Some college or \n associate's degree", 
+  "Bachelor's \n degree or higher"
+  )
+
+sj_edu_race_plot_stacked <- 
+  sj_edu_race_2019 %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = edu_lvl %>% factor(levels = unique(sj_edu_race_2019$edu_lvl)),
+      y = estimated_pop,
+      fill = race %>% factor(levels = unique(sj_edu_race_2019$race))
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Education Level",
+    y = "Number of People",
+    title = "San Jose Education Level of People 25 years or Older",
+    fill = "Race"
+  ) +
+  scale_x_discrete(labels = edu_labs) +
+  coord_flip() + 
+    theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  ) 
+
+sj_edu_race_plot_stacked
+```
+
+
+
+```{r plot_prop, include=FALSE}
+# re-adding values for population distribution for comparison
+sj_race_total <-
+  sj_edu_race_2019 %>% 
+  group_by(race) %>% 
+  summarize(estimated_pop = sum(estimated_pop)) %>% 
+  mutate(edu_lvl = "Total")
+
+edu_labs <- c(
+  "Less than high \n school diploma", 
+  "High school graduate \n (includes equivalency)", 
+  "Some college or \n associate's degree", 
+  "Bachelor's \n degree or higher",
+  "Total"
+  )
+
+# plotting filled chart
+sj_edu_race_plot_prop <- 
+  sj_edu_race_2019 %>% 
+  rbind(sj_race_total) %>% 
+  ggplot() +
+  geom_bar(
+    aes(
+      x = edu_lvl %>% factor(levels = c("Total",unique(sj_edu_race_2019$edu_lvl))),
+      y = estimated_pop,
+      fill = race %>% factor(levels = unique(sj_edu_race_2019$race))
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Education Level",
+    y = "Proportion of Population 25 years or Older of a Given Education Level",
+    title = "San Jose Education Level of People 25 years or Older",
+    fill = "Race"
+  ) +
+  scale_x_discrete(labels = edu_labs) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )  +
+  guides(
+    fill = guide_legend(
+    )
+  )
+
+sj_edu_race_plot_prop
+```
+
+## Understanding education level through the lens of race for San Jose
+
+For this assignment, I was tasked with developing graphics and an understanding of the education of populations in one Bay Area county. I chose to consider San Jose. I selected San Jose since in my professional life, I do work with planning in San Jose and I think having a more in depth understanding of the populations your work serves can enable you to serve them better. This analysis was completed using ACS data and thus was constrained to considering only populations over 25 years old.
+
+## Total Education Level
+
+For an initial evaluation of total education populations were calculated and the findings are shown below:
+
+```{r}
+sj_edu_race_plot_stacked
+```
+
+In this graph we can see the majority of the total people age 25 years or older living in San Jose have above a bachelor. I find this very interesting and am curious how it would compare to national statistics regarding education. My suspicion is that since San Jose is home to many tech companies, the education level is higher than the average in the United States. It is also interesting to see that the statistics for Asian populations is are nearly in step with White populations at every education level. It is also interesting watching the "Some Other Race" population appear to have disproportionately lower levels of education, as their wedge increases as education level increases.
+
+
+## Proportional Education Level
+
+To gain a better understanding of if education levels are proportionate to the present population, a proportional plot is included below as well.
+
+```{r}
+sj_edu_race_plot_prop
+```
+
+In the plot shown above, an additional statistic for the racial break down of the total population over 25 is included. This allows for an evaluation of an equity problem. If level of education was truly equitable, the racial break down at different education levels would nearly match the racial break down of the total population. 
+
+White populations are surprisingly close to their total population portion, with the main discrepancies in an excess for Bachelors degrees and a dearth in high school graduates. The two populations of Asian and "Some Other Race alone" really highlight the equity problems. For Asian populations, educated populations are consistently smaller than their presence in total populations, aside from "less than high school diploma," where they make up nearly the same portion as the total population. This is then seen even more in the "some other race alone" population where they make up a disproportionately large number of lower education individuals. This makes sense when compared to the previous plot as the sections increased with decreasing education. 
+
+Ultimately, this view does an excellent job of highlighting the fact that even though the San Jose population as a whole may be more educated, equity across race in that education level is still a problem.
+
+Considering that the population evaluated only accounts for those over 25, we can hope that younger generations will lead to more equity when accounted for in future surveys. That with their inclusion over time the population racial break down will be more aligned with the education race break down, but realistically there is a lot of work to be down before that is achieved. 
+
+
+
+
+
